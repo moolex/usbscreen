@@ -10,16 +10,16 @@ import (
 func NewRGB565(r image.Rectangle) *RGB565 {
 	return &RGB565{
 		pixels:     make([]byte, pixelBufferLength(2, r, "RGB565")),
-		stride:     2 * r.Dx(),
+		pitch:      2 * r.Dx(),
 		bounds:     r,
-		colorModel: rgb565Color{},
+		colorModel: rgb565ColorModel{},
 	}
 }
 
 // RGB565 represents the frame buffer. It implements the draw.Image interface.
 type RGB565 struct {
 	pixels     []byte
-	stride     int
+	pitch      int
 	bounds     image.Rectangle
 	colorModel color.Model
 }
@@ -40,7 +40,7 @@ func (d *RGB565) At(x, y int) color.Color {
 		y < d.bounds.Min.Y || y >= d.bounds.Max.Y {
 		return rgb565(0)
 	}
-	i := y*d.stride + 2*x
+	i := y*d.pitch + 2*x
 	return rgb565(d.pixels[i+1])<<8 | rgb565(d.pixels[i])
 }
 
@@ -52,7 +52,7 @@ func (d *RGB565) Set(x, y int, c color.Color) {
 		r, g, b, a := c.RGBA()
 		if a > 0 {
 			rgb := toRGB565(r, g, b)
-			i := y*d.stride + 2*x
+			i := y*d.pitch + 2*x
 			// This assumes a little endian system which is the default for
 			// Raspbian. The d.pixels indices have to be swapped if the target
 			// system is big endian.
@@ -71,9 +71,9 @@ func (d *RGB565) Set(x, y int, c color.Color) {
 //    bit 76543210  76543210
 //        RRRRRGGG  GGGBBBBB
 //       high byte  low byte
-type rgb565Color struct{}
+type rgb565ColorModel struct{}
 
-func (rgb565Color) Convert(c color.Color) color.Color {
+func (rgb565ColorModel) Convert(c color.Color) color.Color {
 	r, g, b, _ := c.RGBA()
 	return toRGB565(r, g, b)
 }

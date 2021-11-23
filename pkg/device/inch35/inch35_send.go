@@ -1,4 +1,4 @@
-package device
+package inch35
 
 import (
 	"fmt"

@@ -2,12 +2,18 @@ package proto
 
 import (
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 	"go.bug.st/serial"
 )
 
-type Options = serial.Mode
+type Options struct {
+	DTR         bool
+	RTS         bool
+	BaudRate    int
+	ReadTimeout time.Duration
+}
 
 func NewSerial(name string) *Serial {
 	return &Serial{name: name}
@@ -22,10 +28,10 @@ func (s *Serial) Ports() ([]string, error) {
 	return serial.GetPortsList()
 }
 
-func (s *Serial) Open(opts *Options) (serial.Port, error) {
+func (s *Serial) Open(opts *Options) error {
 	ports, err := s.Ports()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	var matched string
@@ -36,16 +42,28 @@ func (s *Serial) Open(opts *Options) (serial.Port, error) {
 		}
 	}
 	if matched == "" {
-		return nil, errors.New("USB port not found")
+		return errors.New("USB port not found")
 	}
 
-	port, err := serial.Open(matched, opts)
+	port, err := serial.Open(matched, &serial.Mode{BaudRate: opts.BaudRate})
 	if err != nil {
-		return nil, err
+		return err
+	}
+
+	if err := port.SetDTR(opts.DTR); err != nil {
+		return err
+	}
+
+	if err := port.SetRTS(opts.RTS); err != nil {
+		return err
+	}
+
+	if err := port.SetReadTimeout(opts.ReadTimeout); err != nil {
+		return err
 	}
 
 	s.port = port
-	return s.port, nil
+	return nil
 }
 
 func (s *Serial) Close() error {

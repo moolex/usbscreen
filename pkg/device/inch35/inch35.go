@@ -1,4 +1,4 @@
-package device
+package inch35
 
 import (
 	"bytes"
@@ -8,29 +8,34 @@ import (
 
 	"github.com/pkg/errors"
 
-	"usbscreen/internal/bitmap"
-	"usbscreen/internal/proto"
+	"usbscreen/pkg/bitmap"
+	"usbscreen/pkg/proto"
 )
 
 const (
-	RESTART     = 101
-	SHUTDOWN    = 108
-	STARTUP     = 109
-	SET_LIGHT   = 110
-	SET_ROTATE  = 121
-	SET_MIRROR  = 122
-	DRAW_PIXELS = 195
-	DRAW_BITMAP = 197
-	TESTING     = 255
+	Restart    = 101
+	Shutdown   = 108
+	Startup    = 109
+	SetLight   = 110
+	SetRotate  = 121
+	SetMirror  = 122
+	DrawPixels = 195
+	DrawBitmap = 197
+	TESTING    = 255
 )
 
-func NewInch35(serial *proto.Serial) (proto.Control, error) {
+func New(serial *proto.Serial) (proto.Control, error) {
 	dev := &Inch35{
 		serial: serial,
 		width:  320,
 		height: 480,
 	}
-	return dev, dev.init()
+	return dev, serial.Open(&proto.Options{
+		DTR:         true,
+		RTS:         true,
+		BaudRate:    115200,
+		ReadTimeout: time.Millisecond,
+	})
 }
 
 type Inch35 struct {
@@ -39,41 +44,20 @@ type Inch35 struct {
 	height int
 }
 
-func (i *Inch35) init() error {
-	port, err := i.serial.Open(&proto.Options{BaudRate: 115200})
-	if err != nil {
-		return err
-	}
-
-	if err := port.SetDTR(true); err != nil {
-		return err
-	}
-
-	if err := port.SetRTS(true); err != nil {
-		return err
-	}
-
-	if err := port.SetReadTimeout(10 * time.Millisecond); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (i *Inch35) Startup() error {
-	return i.sendCMD(STARTUP)
+	return i.sendCMD(Startup)
 }
 
 func (i *Inch35) Shutdown() error {
-	return i.sendCMD(SHUTDOWN)
+	return i.sendCMD(Shutdown)
 }
 
 func (i *Inch35) Restart() error {
-	return i.sendCMD(RESTART)
+	return i.sendCMD(Restart)
 }
 
 func (i *Inch35) SetLight(light uint8) error {
-	return i.sendCMD(SET_LIGHT, int(light))
+	return i.sendCMD(SetLight, int(light))
 }
 
 func (i *Inch35) SetRotate(landscape bool, invert bool) error {
@@ -97,7 +81,7 @@ func (i *Inch35) SetRotate(landscape bool, invert bool) error {
 	_ = binary.Write(&bs, binary.BigEndian, uint16(i.width))
 	_ = binary.Write(&bs, binary.BigEndian, uint16(i.height))
 
-	return i.sendOpt(SET_ROTATE, 16, bs.Bytes())
+	return i.sendOpt(SetRotate, 16, bs.Bytes())
 }
 
 func (i *Inch35) SetMirror(mirror bool) error {
@@ -106,7 +90,7 @@ func (i *Inch35) SetMirror(mirror bool) error {
 		b = 1
 	}
 
-	return i.sendOpt(SET_MIRROR, 16, []byte{b})
+	return i.sendOpt(SetMirror, 16, []byte{b})
 }
 
 func (i *Inch35) DrawBitmap(posX uint16, posY uint16, image image.Image) error {
@@ -120,7 +104,7 @@ func (i *Inch35) DrawBitmap(posX uint16, posY uint16, image image.Image) error {
 		return errors.New("height overflow")
 	}
 
-	if err := i.sendCMD(DRAW_BITMAP, int(posX), int(posY), int(posX)+imgW-1, int(posY)+imgH-1); err != nil {
+	if err := i.sendCMD(DrawBitmap, int(posX), int(posY), int(posX)+imgW-1, int(posY)+imgH-1); err != nil {
 		return err
 	}
 
