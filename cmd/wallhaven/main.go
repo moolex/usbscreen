@@ -1,8 +1,12 @@
 package main
 
 import (
+	"errors"
 	"log"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/disintegration/imaging"
@@ -26,6 +30,7 @@ var whKey = flag.String("wh-key", "", "wallhaven api key")
 var whQuery = flag.String("wh-query", "", "wallhaven query string")
 var whCategory = flag.String("wh-category", "", "wallhaven category names")
 var whPurity = flag.String("wh-purity", "", "wallhaven purity levels")
+var whRandom = flag.Bool("wh-random", false, "wallhaven random sort")
 var whSorting = flag.String("wh-sorting", "", "wallhaven sorting type")
 var whToplist = flag.String("wh-toplist", "1M", "wallhaven toplist range")
 var whRatio = flag.String("wh-ratio", "", "wallhaven ratio filter")
@@ -91,7 +96,9 @@ func main() {
 	if whRatio != nil {
 		q.SetRatio(*whRatio)
 	}
-	if whSorting != nil && *whSorting != "" {
+	if *whRandom {
+		q.Random()
+	} else if whSorting != nil && *whSorting != "" {
 		q.SortBy(*whSorting)
 	} else if whToplist != nil {
 		q.SortBy(api.SortTopList)
@@ -103,46 +110,53 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var errors uint
+	shutdown := make(chan struct{})
 
-	for {
-		if errors > 100 {
-			q.Page = 1
-			if retN, err := wh.Query(q); err != nil {
-				time.Sleep(errorWait)
-				continue
-			} else {
-				errors = 0
-				ret = retN
+	go func() {
+		defer func() {
+			if err := dev.Shutdown(); err != nil {
+				logger.With(zap.Error(err)).Info("shutdown failed")
+			}
+			logger.Info("exited")
+		}()
+		for {
+			select {
+			case <-shutdown:
+				return
+			default:
+				wp, err := ret.Pick()
+				if err != nil {
+					if errors.Is(err, api.ErrNoMoreItems) {
+						q.Page = 1
+					}
+					logger.With(zap.Error(err)).Info("get wallpaper failed")
+					time.Sleep(errorWait)
+					continue
+				}
+
+				img, err := utils.GetThumbImage(wp, api.ThumbOriginal)
+				if err != nil {
+					logger.With(zap.Error(err)).Info("get thumb image failed")
+					time.Sleep(errorWait)
+					continue
+				}
+
+				img2 := imaging.Fill(img, width, height, imaging.Center, imaging.Lanczos)
+
+				if err := dev.DrawBitmap(0, 0, img2); err != nil {
+					logger.With(zap.Error(err)).Info("drag bitmap failed")
+					time.Sleep(errorWait)
+					continue
+				}
+
+				time.Sleep(changeWait)
 			}
 		}
+	}()
 
-		wp, err := ret.Pick()
-		if err != nil {
-			logger.With(zap.Error(err)).Info("get wallpaper failed")
-			time.Sleep(errorWait)
-			errors++
-			continue
-		}
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
 
-		img, err := utils.GetThumbImage(wp, api.ThumbOriginal)
-		if err != nil {
-			logger.With(zap.Error(err)).Info("get thumb image failed")
-			time.Sleep(errorWait)
-			errors++
-			continue
-		}
-
-		img2 := imaging.Fill(img, width, height, imaging.Center, imaging.Lanczos)
-
-		if err := dev.DrawBitmap(0, 0, img2); err != nil {
-			logger.With(zap.Error(err)).Info("drag bitmap failed")
-			time.Sleep(errorWait)
-			errors++
-			continue
-		}
-
-		errors = 0
-		time.Sleep(changeWait)
-	}
+	<-signals
+	shutdown <- struct{}{}
 }

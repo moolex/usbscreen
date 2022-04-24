@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/disintegration/imaging v1.6.2
-	github.com/moolex/wallhaven-go v0.0.0-20220424101201-7b8d621efd7c
+	github.com/moolex/wallhaven-go v0.0.0-20220424160018-600b46404b51
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/pflag v1.0.5
 	go.bug.st/serial v1.3.5
