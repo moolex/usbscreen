@@ -58,7 +58,7 @@ func (i *Inch35) sendBytes(bytes []byte) error {
 		return err
 	} else {
 		sent = n
-		sentCost = time.Now().Sub(sentStart)
+		sentCost = time.Since(sentStart)
 	}
 
 	recvStart := time.Now()
@@ -67,7 +67,7 @@ func (i *Inch35) sendBytes(bytes []byte) error {
 		return err
 	} else {
 		recv = n
-		recvCost = time.Now().Sub(recvStart)
+		recvCost = time.Since(recvStart)
 	}
 
 	ext := ""
