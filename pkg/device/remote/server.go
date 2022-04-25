@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"image/png"
-	"log"
 	"net/http"
 	"net/rpc"
 
@@ -26,7 +25,7 @@ func Proxy(dev proto.Control, srv *http.Server, lifecycle fx.Lifecycle) error {
 		OnStart: func(ctx context.Context) error {
 			go func() {
 				if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-					log.Fatal(err)
+					panic(err)
 				}
 			}()
 			return nil

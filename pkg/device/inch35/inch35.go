@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 
 	"usbscreen/pkg/bitmap"
 	"usbscreen/pkg/proto"
@@ -24,9 +25,10 @@ const (
 	TESTING    = 255
 )
 
-func New(serial *proto.Serial) (proto.Control, error) {
+func New(serial *proto.Serial, logger *zap.Logger) (proto.Control, error) {
 	dev := &Inch35{
 		serial: serial,
+		logger: logger,
 		width:  320,
 		height: 480,
 	}
@@ -40,6 +42,7 @@ func New(serial *proto.Serial) (proto.Control, error) {
 
 type Inch35 struct {
 	serial *proto.Serial
+	logger *zap.Logger
 	width  int
 	height int
 }

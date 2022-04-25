@@ -2,10 +2,10 @@ package inch35
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 )
 
 func (i *Inch35) sendCMD(code uint8, vars ...int) error {
@@ -72,17 +72,16 @@ func (i *Inch35) sendBytes(bytes []byte) error {
 
 	ext := ""
 	if len(bytes) <= 16 {
-		ext = fmt.Sprintf(" [%x]", bytes)
+		ext = fmt.Sprintf("%x", bytes)
 	}
 
-	log.Printf(
-		"transfer done :: sent: %d bytes (%s) | recv: %d bytes (%s)%s\n",
-		sent,
-		sentCost.String(),
-		recv,
-		recvCost.String(),
-		ext,
-	)
+	i.logger.With(
+		zap.Int("sent", sent),
+		zap.String("sent_cost", sentCost.String()),
+		zap.Int("recv", recv),
+		zap.String("recv_cost", recvCost.String()),
+		zap.String("data", ext),
+	).Debug("transfer")
 
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 
 	flag "github.com/spf13/pflag"
 	"go.uber.org/fx"
+	"go.uber.org/zap"
 
 	"usbscreen/pkg/device/inch35"
 	"usbscreen/pkg/device/remote"
@@ -19,9 +20,15 @@ func main() {
 
 	fx.New(
 		fx.Provide(
-			func() (*proto.Serial, *http.Server) {
-				return proto.NewSerial(*serial),
-					&http.Server{Addr: *listen}
+			func() *proto.Serial {
+				return proto.NewSerial(*serial)
+			},
+			func() *http.Server {
+				return &http.Server{Addr: *listen}
+			},
+			func() *zap.Logger {
+				l, _ := zap.NewDevelopment()
+				return l
 			},
 			inch35.New,
 		),

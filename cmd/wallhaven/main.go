@@ -46,13 +46,15 @@ func main() {
 		changeWait = d
 	}
 
+	logger, _ := zap.NewDevelopment()
+
 	var dev proto.Control
 	var err error
 
 	if strings.Contains(*serial, ":") {
 		dev, err = remote.New(*serial)
 	} else {
-		dev, err = inch35.New(proto.NewSerial(*serial))
+		dev, err = inch35.New(proto.NewSerial(*serial), logger)
 	}
 
 	if err != nil {
@@ -77,8 +79,6 @@ func main() {
 		width = 480
 		height = 320
 	}
-
-	logger, _ := zap.NewDevelopment()
 
 	wh := api.New(*whKey)
 	wh.SetLogger(logger)
@@ -111,33 +111,38 @@ func main() {
 	}
 
 	shutdown := make(chan struct{})
+	exited := make(chan struct{})
 
 	go func() {
+		timer := time.NewTimer(time.Nanosecond)
+
 		defer func() {
+			timer.Stop()
 			if err := dev.Shutdown(); err != nil {
 				logger.With(zap.Error(err)).Info("shutdown failed")
 			}
-			logger.Info("exited")
+			exited <- struct{}{}
 		}()
+
 		for {
 			select {
 			case <-shutdown:
 				return
-			default:
+			case <-timer.C:
 				wp, err := ret.Pick()
 				if err != nil {
 					if errors.Is(err, api.ErrNoMoreItems) {
 						q.Page = 1
 					}
 					logger.With(zap.Error(err)).Info("get wallpaper failed")
-					time.Sleep(errorWait)
+					timer.Reset(errorWait)
 					continue
 				}
 
 				img, err := utils.GetThumbImage(wp, api.ThumbOriginal)
 				if err != nil {
 					logger.With(zap.Error(err)).Info("get thumb image failed")
-					time.Sleep(errorWait)
+					timer.Reset(errorWait)
 					continue
 				}
 
@@ -145,11 +150,11 @@ func main() {
 
 				if err := dev.DrawBitmap(0, 0, img2); err != nil {
 					logger.With(zap.Error(err)).Info("drag bitmap failed")
-					time.Sleep(errorWait)
+					timer.Reset(errorWait)
 					continue
 				}
 
-				time.Sleep(changeWait)
+				timer.Reset(changeWait)
 			}
 		}
 	}()
@@ -158,5 +163,8 @@ func main() {
 	signal.Notify(signals, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
 
 	<-signals
+	logger.Info("shutting down")
 	shutdown <- struct{}{}
+	<-exited
+	logger.Info("exited")
 }
