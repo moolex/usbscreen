@@ -34,6 +34,8 @@ github.com/moolex/wallhaven-go v0.0.0-20220425053143-23a758ca245c h1:Q9KyFZUgc8u
 github.com/moolex/wallhaven-go v0.0.0-20220425053143-23a758ca245c/go.mod h1:zy2640W9QffjEwqPYcIpvy3LkC/wnKH7CWkcJYkHAfg=
 github.com/moolex/wallhaven-go v0.0.0-20220425054050-25558de46502 h1:Sgm6NAjY6M2HHu2kcy9CLUQo8twZx9w6EbGcPCf84BA=
 github.com/moolex/wallhaven-go v0.0.0-20220425054050-25558de46502/go.mod h1:zy2640W9QffjEwqPYcIpvy3LkC/wnKH7CWkcJYkHAfg=
+github.com/moolex/wallhaven-go v0.0.0-20220426061935-17fdc197cffc h1:G1dMzYTVtLxCCASfu4TzqFUTE1s4ioEIWCSP1S1m/vs=
+github.com/moolex/wallhaven-go v0.0.0-20220426061935-17fdc197cffc/go.mod h1:zy2640W9QffjEwqPYcIpvy3LkC/wnKH7CWkcJYkHAfg=
 github.com/pkg/diff v0.0.0-20210226163009-20ebb0f2a09e/go.mod h1:pJLUxLENpZxwdsKMEsNbx1VGcRFpLqf3715MtcvvzbA=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=

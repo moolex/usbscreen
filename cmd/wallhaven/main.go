@@ -49,16 +49,16 @@ func main() {
 	logger, _ := zap.NewDevelopment()
 
 	var dev proto.Control
-	var err error
+	var devErr error
 
 	if strings.Contains(*serial, ":") {
-		dev, err = remote.New(*serial)
+		dev, devErr = remote.New(*serial)
 	} else {
-		dev, err = inch35.New(proto.NewSerial(*serial), logger)
+		dev, devErr = inch35.New(proto.NewSerial(*serial), logger)
 	}
 
-	if err != nil {
-		log.Fatal(err)
+	if devErr != nil {
+		log.Fatal(devErr)
 	}
 
 	if err := dev.Startup(); err != nil {
@@ -105,7 +105,7 @@ func main() {
 		q.TopRange = *whToplist
 	}
 
-	ret, err := wh.Query(q)
+	result, err := wh.Query(q)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func main() {
 			case <-shutdown:
 				return
 			case <-timer.C:
-				wp, err := ret.Pick()
+				wp, err := result.Pick(api.PickLoop, api.PickRand)
 				if err != nil {
 					if errors.Is(err, api.ErrNoMoreItems) {
 						q.Page = 1
