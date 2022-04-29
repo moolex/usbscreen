@@ -115,8 +115,10 @@ func main() {
 		go bot.Start()
 	}
 
-	if err := p.Querying(); err != nil {
+	if ret, err := wh.Query(p.GetQuery()); err != nil {
 		log.Fatal(err)
+	} else {
+		p.SetResult(ret)
 	}
 
 	shutdown := make(chan struct{})
