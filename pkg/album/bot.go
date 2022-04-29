@@ -2,19 +2,19 @@ package album
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/moolex/wallhaven-go/api"
 	"github.com/samber/lo"
-	"go.uber.org/zap"
 	tele "gopkg.in/telebot.v3"
 
 	"usbscreen/pkg/proto"
 )
 
-func NewBot(token string, dev proto.Control, album *Album, logger *zap.Logger) (*Bot, error) {
+func NewBot(token string, dev proto.Control, album *Album) (*Bot, error) {
 	pref := tele.Settings{
 		Token: token,
 		Poller: &tele.LongPoller{
@@ -27,61 +27,64 @@ func NewBot(token string, dev proto.Control, album *Album, logger *zap.Logger) (
 		return nil, err
 	}
 
-	return &Bot{
-		b:      b,
-		dev:    dev,
-		album:  album,
-		logger: logger,
-	}, nil
+	return &Bot{b: b, dev: dev, album: album}, nil
 }
 
 type Bot struct {
-	b      *tele.Bot
-	dev    proto.Control
-	album  *Album
-	logger *zap.Logger
+	b     *tele.Bot
+	dev   proto.Control
+	album *Album
 }
 
-func (b *Bot) registerHandles() {
+func (b *Bot) handleBase() {
 	b.b.Handle("/open", func(context tele.Context) error {
-		err := b.dev.Startup()
-		if err != nil {
-			b.logger.With(zap.Error(err)).Info("open failed")
+		if err := b.dev.Startup(); err != nil {
+			return context.Reply(fmt.Sprintf("open failed: %s", err))
 		}
+
 		b.album.Wakeup()
-		return err
+		return context.Reply("OK")
 	})
 
 	b.b.Handle("/close", func(context tele.Context) error {
-		err := b.dev.Shutdown()
-		if err != nil {
-			b.logger.With(zap.Error(err)).Info("close failed")
+		if err := b.dev.Shutdown(); err != nil {
+			return context.Reply(fmt.Sprintf("close failed: %s", err))
 		}
+
 		b.album.Pause()
-		return err
+		return context.Reply("OK")
 	})
 
 	b.b.Handle("/pause", func(context tele.Context) error {
-		b.logger.With(zap.String("bot-cmd", "pause")).Info("invoking")
 		b.album.Pause()
-		return nil
+		return context.Reply("OK")
 	})
 
 	b.b.Handle("/resume", func(context tele.Context) error {
-		b.logger.With(zap.String("bot-cmd", "resume")).Info("invoking")
 		b.album.Wakeup()
-		return nil
+		return context.Reply("OK")
 	})
+}
 
+func (b *Bot) handleConfig() {
 	b.b.Handle("/interval", func(context tele.Context) error {
-		if d, err := time.ParseDuration(context.Message().Payload); err == nil {
-			b.album.ChangeWait = d
-			return nil
-		} else {
-			return err
+		in := context.Message().Payload
+		if in == "" {
+			return context.Reply(b.album.ChangeWait.String())
 		}
-	})
 
+		duration, err := time.ParseDuration(in)
+		if err != nil {
+			return context.Reply(fmt.Sprintf("change failed: %s", err))
+		}
+
+		b.album.ChangeWait = duration
+		b.album.Wakeup()
+		return context.Reply("OK")
+	})
+}
+
+func (b *Bot) handleQuery() {
 	b.b.Handle("/info", func(context tele.Context) error {
 		wp := b.album.GetWallpaper()
 		if wp != nil {
@@ -91,82 +94,91 @@ func (b *Bot) registerHandles() {
 		}
 	})
 
-	b.b.Handle("/query", func(context tele.Context) error {
+	getPageInfo := func() string {
+		r := b.album.GetResult()
+		return fmt.Sprintf("items: %d, page: %d/%d", r.Meta.Total, r.Meta.CurrentPage, r.Meta.LastPage)
+	}
+
+	updateQuery := func(up func(q *api.QueryCond), ctx tele.Context) error {
 		b.album.UpdateQuery(func(q *api.QueryCond) {
+			q.Page = 1
+			up(q)
+		})
+
+		if err := b.album.Querying(); err != nil {
+			return ctx.Reply(fmt.Sprintf("update failed: %s", err))
+		}
+
+		return ctx.Reply(fmt.Sprintf("Updated, %s", getPageInfo()))
+	}
+
+	b.b.Handle("/query", func(context tele.Context) error {
+		return updateQuery(func(q *api.QueryCond) {
 			q.Query = context.Message().Payload
 			q.SortBy(api.SortViews)
-		})
-		return b.album.Querying()
+		}, context)
 	})
 
 	b.b.Handle("/toplist", func(context tele.Context) error {
-		b.album.UpdateQuery(func(q *api.QueryCond) {
+		return updateQuery(func(q *api.QueryCond) {
 			q.SortBy(api.SortTopList)
 			q.TopRange = context.Message().Payload
-		})
-		return b.album.Querying()
+		}, context)
 	})
 
 	b.b.Handle("/sorting", func(context tele.Context) error {
-		b.album.UpdateQuery(func(q *api.QueryCond) {
+		return updateQuery(func(q *api.QueryCond) {
 			q.SortBy(context.Message().Payload)
-		})
-		return b.album.Querying()
+		}, context)
 	})
 
 	b.b.Handle("/category", func(context tele.Context) error {
-		b.album.UpdateQuery(func(q *api.QueryCond) {
+		return updateQuery(func(q *api.QueryCond) {
 			q.SetCategory(strings.Split(context.Message().Payload, ",")...)
-		})
-		return b.album.Querying()
+		}, context)
 	})
 
 	b.b.Handle("/purity", func(context tele.Context) error {
-		b.album.UpdateQuery(func(q *api.QueryCond) {
+		return updateQuery(func(q *api.QueryCond) {
 			q.SetPurity(strings.Split(context.Message().Payload, ",")...)
-		})
-		return b.album.Querying()
+		}, context)
 	})
 
 	b.b.Handle("/page", func(context tele.Context) error {
 		in := context.Message().Payload
-		if in != "" {
-			b.album.UpdateQuery(func(q *api.QueryCond) {
-				p, e := strconv.Atoi(in)
-				q.Page = lo.Ternary(e == nil, p, 1)
-			})
-			return b.album.Querying()
-		} else {
-			r := b.album.GetResult()
-			return context.Reply(fmt.Sprintf(
-				"Total items: %d, pagination: %d/%d",
-				r.Meta.Total,
-				r.Meta.CurrentPage,
-				r.Meta.LastPage,
-			))
+		if in == "" {
+			return context.Reply(fmt.Sprintf("Total %s", getPageInfo()))
 		}
+
+		return updateQuery(func(q *api.QueryCond) {
+			p, e := strconv.Atoi(in)
+			q.Page = lo.Ternary(e == nil, p, 1)
+		}, context)
 	})
 
-	b.b.Handle("/params", func(context tele.Context) error {
+	b.b.Handle("/preview", func(context tele.Context) error {
 		query, err := b.album.GetQuery().ToMap()
 		if err != nil {
-			return context.Reply(fmt.Sprintf("query error: %s", err))
+			return context.Reply(fmt.Sprintf("preview error: %s", err))
 		}
 
-		var qs []string
+		values := make(url.Values)
 		for k, v := range query {
-			qs = append(qs, fmt.Sprintf("%s=%s", k, v))
+			values.Set(k, v)
 		}
 
-		return context.Reply(strings.Join(qs, "\n"))
+		return context.Send(fmt.Sprintf("https://wallhaven.cc/search?%s", values.Encode()))
 	})
 }
 
 func (b *Bot) Start() {
-	b.registerHandles()
-	b.b.Start()
+	b.handleBase()
+	b.handleConfig()
+	b.handleQuery()
+	go b.b.Start()
 }
 
 func (b *Bot) Stop() {
-	b.b.Stop()
+	// TODO telebot stop will freezes for next response
+	go b.b.Stop()
 }

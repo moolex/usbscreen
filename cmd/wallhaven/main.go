@@ -108,11 +108,11 @@ func main() {
 	var bot *album.Bot
 	if *tgToken != "" {
 		var botErr error
-		bot, botErr = album.NewBot(*tgToken, dev, p, logger)
+		bot, botErr = album.NewBot(*tgToken, dev, p)
 		if botErr != nil {
 			log.Fatal(botErr)
 		}
-		go bot.Start()
+		bot.Start()
 	}
 
 	if ret, err := wh.Query(p.GetQuery()); err != nil {

@@ -21,7 +21,7 @@ type Drawer struct {
 }
 
 func (d *Drawer) Drawing() error {
-	wp, err := d.album.GetResult().Pick(api.PickLoop, api.PickRand)
+	wp, err := d.album.GetResult().Pick(api.PickLoop)
 	if err != nil {
 		if errors.Is(err, api.ErrNoMoreItems) {
 			d.album.UpdateQuery(func(q *api.QueryCond) { q.Page = 1 })
