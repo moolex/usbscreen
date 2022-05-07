@@ -14,7 +14,7 @@ import (
 	"usbscreen/pkg/proto"
 )
 
-func NewBot(token string, dev proto.Control, album *Album) (*Bot, error) {
+func NewBot(token string, dev proto.Control, params *Params, dl *Downloader, d *Drawer, h *History) (*Bot, error) {
 	pref := tele.Settings{
 		Token: token,
 		Poller: &tele.LongPoller{
@@ -27,13 +27,23 @@ func NewBot(token string, dev proto.Control, album *Album) (*Bot, error) {
 		return nil, err
 	}
 
-	return &Bot{b: b, dev: dev, album: album}, nil
+	return &Bot{
+		b:      b,
+		dev:    dev,
+		params: params,
+		dl:     dl,
+		d:      d,
+		h:      h,
+	}, nil
 }
 
 type Bot struct {
-	b     *tele.Bot
-	dev   proto.Control
-	album *Album
+	b      *tele.Bot
+	dev    proto.Control
+	params *Params
+	dl     *Downloader
+	d      *Drawer
+	h      *History
 }
 
 func (b *Bot) handleBase() {
@@ -42,7 +52,7 @@ func (b *Bot) handleBase() {
 			return context.Reply(fmt.Sprintf("open failed: %s", err))
 		}
 
-		b.album.Wakeup()
+		b.params.Wakeup()
 		return context.Reply("OK")
 	})
 
@@ -51,17 +61,17 @@ func (b *Bot) handleBase() {
 			return context.Reply(fmt.Sprintf("close failed: %s", err))
 		}
 
-		b.album.Pause()
+		b.params.Pause()
 		return context.Reply("OK")
 	})
 
 	b.b.Handle("/pause", func(context tele.Context) error {
-		b.album.Pause()
+		b.params.Pause()
 		return context.Reply("OK")
 	})
 
 	b.b.Handle("/resume", func(context tele.Context) error {
-		b.album.Wakeup()
+		b.params.Wakeup()
 		return context.Reply("OK")
 	})
 }
@@ -70,7 +80,7 @@ func (b *Bot) handleConfig() {
 	b.b.Handle("/interval", func(context tele.Context) error {
 		in := context.Message().Payload
 		if in == "" {
-			return context.Reply(b.album.ChangeWait.String())
+			return context.Reply(b.params.ChangeWait.String())
 		}
 
 		duration, err := time.ParseDuration(in)
@@ -78,34 +88,42 @@ func (b *Bot) handleConfig() {
 			return context.Reply(fmt.Sprintf("change failed: %s", err))
 		}
 
-		b.album.ChangeWait = duration
-		b.album.Wakeup()
+		b.params.ChangeWait = duration
+		b.params.Wakeup()
+		return context.Reply("OK")
+	})
+
+	b.b.Handle("/light", func(context tele.Context) error {
+		in := context.Message().Payload
+		if in == "" {
+			return context.Reply(strconv.Itoa(int(b.params.ScreenLight)))
+		}
+
+		if parsed, err := strconv.ParseUint(in, 10, 8); err == nil {
+			b.params.ScreenLight = uint8(parsed)
+		}
+
+		if err := b.dev.SetLight(b.params.GetLight()); err != nil {
+			return context.Reply(fmt.Sprintf("change failed: %s", err))
+		}
+
 		return context.Reply("OK")
 	})
 }
 
 func (b *Bot) handleQuery() {
-	b.b.Handle("/info", func(context tele.Context) error {
-		wp := b.album.GetWallpaper()
-		if wp != nil {
-			return context.Reply(wp.Url)
-		} else {
-			return context.Reply("Current no wallpaper")
-		}
-	})
-
 	getPageInfo := func() string {
-		r := b.album.GetResult()
+		r := b.params.GetResult()
 		return fmt.Sprintf("items: %d, page: %d/%d", r.Meta.Total, r.Meta.CurrentPage, r.Meta.LastPage)
 	}
 
 	updateQuery := func(up func(q *api.QueryCond), ctx tele.Context) error {
-		b.album.UpdateQuery(func(q *api.QueryCond) {
+		b.params.UpdateQuery(func(q *api.QueryCond) {
 			q.Page = 1
 			up(q)
 		})
 
-		if err := b.album.Querying(); err != nil {
+		if err := b.params.Querying(); err != nil {
 			return ctx.Reply(fmt.Sprintf("update failed: %s", err))
 		}
 
@@ -157,7 +175,7 @@ func (b *Bot) handleQuery() {
 	})
 
 	b.b.Handle("/preview", func(context tele.Context) error {
-		query, err := b.album.GetQuery().ToMap()
+		query, err := b.params.GetQuery().ToMap()
 		if err != nil {
 			return context.Reply(fmt.Sprintf("preview error: %s", err))
 		}
@@ -171,10 +189,84 @@ func (b *Bot) handleQuery() {
 	})
 }
 
+func (b *Bot) handleAction() {
+	b.b.Handle("/info", func(context tele.Context) error {
+		log := b.h.Curr()
+		if log != nil {
+			return context.Reply(log.wp.Url)
+		} else {
+			return context.Reply("Current no wallpaper")
+		}
+	})
+
+	b.b.Handle("/logs", func(context tele.Context) error {
+		var lines []string
+		for _, log := range b.h.Logs() {
+			lines = append(lines, log.wp.Url)
+		}
+		return context.Reply(strings.Join(lines, "\n"))
+	})
+
+	b.b.Handle("/prev", func(context tele.Context) error {
+		log := b.h.Prev()
+		if log == nil {
+			return context.Reply("Previous no item")
+		}
+		if err := b.d.Canvas(log.filled); err != nil {
+			return context.Reply(fmt.Sprintf("draw canvas failed: %s", err))
+		}
+		b.params.Reset(b.params.ChangeWait)
+		b.h.Push(log)
+		return context.Reply("OK")
+	})
+
+	b.b.Handle("/full", func(context tele.Context) error {
+		log := b.h.Curr()
+		if log == nil {
+			return context.Reply("Current no item")
+		}
+		if !log.thumb {
+			return context.Reply("Current is full size")
+		}
+		filled, err := b.d.Filled(
+			log.wp,
+			func(wp *api.Wallpaper) ([]byte, bool, error) {
+				bs, err := b.dl.Get(wp, false)
+				return bs, false, err
+			},
+			nil,
+			func(wp *api.Wallpaper, thumb bool, origin []byte) error {
+				return b.dl.Save(wp, origin)
+			},
+		)
+		if err != nil {
+			return context.Reply(fmt.Sprintf("get thumb failed: %s", err))
+		}
+		if err := b.d.Canvas(filled); err != nil {
+			return context.Reply(fmt.Sprintf("draw canvas failed: %s", err))
+		}
+		b.params.Reset(b.params.ChangeWait)
+		return context.Reply("OK")
+	})
+
+	b.b.Handle("/save", func(context tele.Context) error {
+		log := b.h.Curr()
+		if log == nil {
+			return context.Reply("Current no item")
+		}
+		if err := b.dl.Save(log.wp, lo.Ternary(log.thumb, nil, log.origin)); err != nil {
+			return context.Reply(fmt.Sprintf("save failed: %s", err))
+		} else {
+			return context.Reply(fmt.Sprintf("Saved of %s", log.wp.Url))
+		}
+	})
+}
+
 func (b *Bot) Start() {
 	b.handleBase()
 	b.handleConfig()
 	b.handleQuery()
+	b.handleAction()
 	go b.b.Start()
 }
 

@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/inhies/go-bytesize"
 	"github.com/moolex/wallhaven-go/api"
 	flag "github.com/spf13/pflag"
 	"go.uber.org/zap"
@@ -19,7 +20,7 @@ import (
 )
 
 var serial = flag.String("serial", "ttyACM0", "serial name or remote addr")
-var light = flag.Uint8("light", 100, "set light")
+var light = flag.Uint8("light", 50, "set light")
 var landscape = flag.Bool("landscape", false, "set landscape")
 var invert = flag.Bool("invert", false, "set invert")
 var interval = flag.String("interval", "5m", "draw interval")
@@ -33,11 +34,18 @@ var whSorting = flag.String("wh-sorting", "", "wallhaven sorting type")
 var whToplist = flag.String("wh-toplist", "1M", "wallhaven toplist range")
 var whRatio = flag.String("wh-ratio", "", "wallhaven ratio filter")
 var tgToken = flag.String("tg-token", "", "telegram bot token")
+var cacheDir = flag.String("cache-dir", "", "caching thumb files")
+var saveDir = flag.String("save-dir", "", "wallpaper save dir")
+var maxSize = flag.String("max-size", "2MB", "max size to fetch origin")
+var maxPage = flag.Int("max-page", -1, "max page to fetch")
+var autoSaveViews = flag.Int("auto-save-views", -1, "auto save if views than")
+var autoSaveFavorites = flag.Int("auto-save-favorites", -1, "auto save if favorites than")
 
 func main() {
 	flag.Parse()
 
-	p := album.NewAlbum(320, 480)
+	p := album.NewParams(320, 480)
+	p.ScreenLight = *light
 
 	if d, err := time.ParseDuration(*interval); err != nil {
 		log.Fatal(err)
@@ -45,7 +53,22 @@ func main() {
 		p.ChangeWait = d
 	}
 
+	bSize, bErr := bytesize.Parse(*maxSize)
+	if bErr != nil {
+		log.Fatal(bErr)
+	}
+
 	logger, _ := zap.NewDevelopment()
+
+	cache, cErr := album.NewCache(*cacheDir)
+	if cErr != nil {
+		log.Fatal(cErr)
+	}
+
+	downloader, dErr := album.NewDownloader(*saveDir, logger)
+	if dErr != nil {
+		log.Fatal(dErr)
+	}
 
 	var dev proto.Control
 	var devErr error
@@ -64,7 +87,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := dev.SetLight(*light); err != nil {
+	if err := dev.SetLight(p.GetLight()); err != nil {
 		log.Fatal(err)
 	}
 
@@ -105,10 +128,13 @@ func main() {
 		p.SetQuery(q)
 	}
 
+	history := album.NewHistory()
+	drawer := album.NewDrawer(dev, p, cache, history)
+
 	var bot *album.Bot
 	if *tgToken != "" {
 		var botErr error
-		bot, botErr = album.NewBot(*tgToken, dev, p)
+		bot, botErr = album.NewBot(*tgToken, dev, p, downloader, drawer, history)
 		if botErr != nil {
 			log.Fatal(botErr)
 		}
@@ -126,6 +152,14 @@ func main() {
 
 	go func() {
 		timer := time.NewTimer(time.Nanosecond)
+		wakeupChan := p.WakeupChan()
+		resetChan := p.ResetChan()
+
+		ab := album.New(p, downloader, drawer,
+			album.WithMaxPage(*maxPage),
+			album.WithMaxSize(int(bSize)),
+			album.WithAutoSave(*autoSaveViews, *autoSaveFavorites),
+		)
 
 		defer func() {
 			timer.Stop()
@@ -138,9 +172,6 @@ func main() {
 			exited <- struct{}{}
 		}()
 
-		drawer := album.NewDrawer(dev, p)
-		wakeupChan := p.WakeupChan()
-
 		for {
 			select {
 			case <-shutdown:
@@ -148,12 +179,15 @@ func main() {
 			case <-wakeupChan:
 				timer.Reset(time.Millisecond)
 				continue
+			case dur := <-resetChan:
+				timer.Reset(dur)
+				continue
 			case <-timer.C:
 				if p.Paused() {
 					logger.Info("switch paused, skip...")
 					continue
 				}
-				if err := drawer.Drawing(); err != nil {
+				if err := ab.Drawing(); err != nil {
 					logger.With(zap.Error(err)).Info("drawing failed")
 					timer.Reset(p.ErrorWait)
 				} else {
