@@ -47,7 +47,7 @@ func (a *Album) pickImage() (*api.Wallpaper, image.Image, error) {
 		return nil, nil, fmt.Errorf("get wallpaper failed: %w", err)
 	}
 
-	if a.maxPage > 0 && a.params.GetQuery().Page >= a.maxPage {
+	if a.maxPage > 0 && a.params.GetQuery().Page >= a.maxPage && a.params.GetResult().Index() == 1 {
 		a.params.UpdateQuery(func(q *api.QueryCond) { q.Page = 0 })
 	}
 

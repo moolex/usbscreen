@@ -6,7 +6,7 @@ require (
 	github.com/disintegration/imaging v1.6.2
 	github.com/go-resty/resty/v2 v2.7.0
 	github.com/inhies/go-bytesize v0.0.0-20220417184213-4913239db9cf
-	github.com/moolex/wallhaven-go v0.0.0-20220426061935-17fdc197cffc
+	github.com/moolex/wallhaven-go v0.0.0-20220518145103-f207d30d0acb
 	github.com/pkg/errors v0.9.1
 	github.com/samber/lo v1.20.0
 	github.com/schollz/progressbar/v3 v3.8.6

@@ -40,6 +40,7 @@ var maxSize = flag.String("max-size", "2MB", "max size to fetch origin")
 var maxPage = flag.Int("max-page", -1, "max page to fetch")
 var autoSaveViews = flag.Int("auto-save-views", -1, "auto save if views than")
 var autoSaveFavorites = flag.Int("auto-save-favorites", -1, "auto save if favorites than")
+var autoSaveFIncDaily = flag.Int("auto-save-f-inc-daily", -1, "auto save if favorites daily inc than")
 
 func main() {
 	flag.Parse()
@@ -158,7 +159,7 @@ func main() {
 		ab := album.New(p, downloader, drawer,
 			album.WithMaxPage(*maxPage),
 			album.WithMaxSize(int(bSize)),
-			album.WithAutoSave(*autoSaveViews, *autoSaveFavorites),
+			album.WithAutoSave(logger, *autoSaveViews, *autoSaveFavorites, *autoSaveFIncDaily),
 		)
 
 		defer func() {

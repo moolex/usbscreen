@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/inhies/go-bytesize"
 	"github.com/moolex/wallhaven-go/api"
 	"github.com/samber/lo"
 	tele "gopkg.in/telebot.v3"
@@ -193,7 +194,18 @@ func (b *Bot) handleAction() {
 	b.b.Handle("/info", func(context tele.Context) error {
 		log := b.h.Curr()
 		if log != nil {
-			return context.Reply(log.wp.Url)
+			wp := log.wp
+			lines := []string{
+				fmt.Sprintf("Category: %s", wp.Category),
+				fmt.Sprintf("Purity: %s", wp.Purity),
+				fmt.Sprintf("Views: %d", wp.Views),
+				fmt.Sprintf("Favorites: %d", wp.Favorites),
+				fmt.Sprintf("Resolution: %s", wp.Resolution),
+				fmt.Sprintf("File size: %s", bytesize.New(float64(wp.FileSize)).String()),
+				fmt.Sprintf("Created at: %s", wp.CreatedAt),
+				fmt.Sprintf("URL: %s", wp.Url),
+			}
+			return context.Reply(strings.Join(lines, "\n"))
 		} else {
 			return context.Reply("Current no wallpaper")
 		}
