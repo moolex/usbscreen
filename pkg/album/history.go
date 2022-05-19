@@ -20,13 +20,25 @@ type HistoryLog struct {
 	wp     *api.Wallpaper
 	filled image.Image
 	thumb  bool
-	origin []byte
+	origin *VFile
 }
 
 func (h *History) push(item *HistoryLog) {
 	h.items = append(h.items, item)
 	if len(h.items) > h.max {
+		item := h.items[0]
+		if item.origin != nil {
+			_ = item.origin.Free()
+		}
 		h.items = h.items[1:]
+	}
+}
+
+func (h *History) Clean() {
+	for _, i := range h.items {
+		if i.origin != nil {
+			_ = i.origin.Free()
+		}
 	}
 }
 
@@ -34,7 +46,7 @@ func (h *History) Logs() []*HistoryLog {
 	return h.items
 }
 
-func (h *History) Add(wp *api.Wallpaper, filled image.Image, thumb bool, origin []byte) {
+func (h *History) Add(wp *api.Wallpaper, filled image.Image, thumb bool, origin *VFile) {
 	h.push(&HistoryLog{wp: wp, filled: filled, thumb: thumb, origin: origin})
 }
 

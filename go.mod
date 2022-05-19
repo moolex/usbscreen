@@ -8,6 +8,7 @@ require (
 	github.com/inhies/go-bytesize v0.0.0-20220417184213-4913239db9cf
 	github.com/moolex/wallhaven-go v0.0.0-20220518145103-f207d30d0acb
 	github.com/pkg/errors v0.9.1
+	github.com/rs/xid v1.4.0
 	github.com/samber/lo v1.20.0
 	github.com/schollz/progressbar/v3 v3.8.6
 	github.com/spf13/afero v1.8.2

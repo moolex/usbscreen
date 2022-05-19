@@ -16,6 +16,7 @@ import (
 	"usbscreen/pkg/album"
 	"usbscreen/pkg/device/inch35"
 	"usbscreen/pkg/device/remote"
+	"usbscreen/pkg/device/virtual"
 	"usbscreen/pkg/proto"
 )
 
@@ -36,6 +37,7 @@ var whRatio = flag.String("wh-ratio", "", "wallhaven ratio filter")
 var tgToken = flag.String("tg-token", "", "telegram bot token")
 var cacheDir = flag.String("cache-dir", "", "caching thumb files")
 var saveDir = flag.String("save-dir", "", "wallpaper save dir")
+var tmpDir = flag.String("tmp-dir", "", "tmp dir for reduce memory usage")
 var maxSize = flag.String("max-size", "2MB", "max size to fetch origin")
 var maxPage = flag.Int("max-page", -1, "max page to fetch")
 var autoSaveViews = flag.Int("auto-save-views", -1, "auto save if views than")
@@ -61,12 +63,17 @@ func main() {
 
 	logger, _ := zap.NewDevelopment()
 
+	tmp, tErr := album.NewTmpFs(*tmpDir)
+	if tErr != nil {
+		log.Fatal(tErr)
+	}
+
 	cache, cErr := album.NewCache(*cacheDir)
 	if cErr != nil {
 		log.Fatal(cErr)
 	}
 
-	downloader, dErr := album.NewDownloader(*saveDir, logger)
+	downloader, dErr := album.NewDownloader(*saveDir, tmp, logger)
 	if dErr != nil {
 		log.Fatal(dErr)
 	}
@@ -74,7 +81,9 @@ func main() {
 	var dev proto.Control
 	var devErr error
 
-	if strings.Contains(*serial, ":") {
+	if *serial == "mock" {
+		dev = virtual.Mock(logger)
+	} else if strings.Contains(*serial, ":") {
 		dev, devErr = remote.New(*serial)
 	} else {
 		dev, devErr = inch35.New(proto.NewSerial(*serial), logger)
@@ -130,7 +139,7 @@ func main() {
 	}
 
 	history := album.NewHistory()
-	drawer := album.NewDrawer(dev, p, cache, history)
+	drawer := album.NewDrawer(dev, logger, p, tmp, cache, history)
 
 	var bot *album.Bot
 	if *tgToken != "" {
@@ -164,12 +173,16 @@ func main() {
 
 		defer func() {
 			timer.Stop()
+			history.Clean()
+
 			if bot != nil {
 				bot.Stop()
 			}
+
 			if err := dev.Shutdown(); err != nil {
 				logger.With(zap.Error(err)).Info("shutdown failed")
 			}
+
 			exited <- struct{}{}
 		}()
 

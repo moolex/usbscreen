@@ -2,39 +2,51 @@ package album
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"image"
+	"image/png"
+	"os"
+	"os/exec"
+	"sync"
 
 	"github.com/disintegration/imaging"
 	"github.com/moolex/wallhaven-go/api"
+	"github.com/samber/lo"
+	"go.uber.org/zap"
 
 	"usbscreen/pkg/proto"
 )
 
-func NewDrawer(dev proto.Control, params *Params, cache *Cache, history *History) *Drawer {
+func NewDrawer(dev proto.Control, log *zap.Logger, params *Params, tmp *TmpFs, cache *Cache, history *History) *Drawer {
 	return &Drawer{
 		dev:     dev,
+		log:     log,
 		params:  params,
+		tmpfs:   tmp,
 		cache:   cache,
 		history: history,
 	}
 }
 
 type Drawer struct {
+	sync.Mutex
 	dev     proto.Control
+	log     *zap.Logger
 	params  *Params
+	tmpfs   *TmpFs
 	cache   *Cache
 	history *History
 }
 
-type wpFetcher func(wp *api.Wallpaper) (origin []byte, thumb bool, err error)
+type wpFetcher func(wp *api.Wallpaper) (origin *VFile, thumb bool, err error)
 type cacheHandler func(wp *api.Wallpaper, thumb image.Image) error
-type postHandler func(wp *api.Wallpaper, thumb bool, origin []byte) error
+type postHandler func(wp *api.Wallpaper, thumb bool, origin *VFile) error
 
 func (d *Drawer) Filled(wp *api.Wallpaper, f wpFetcher, c cacheHandler, h postHandler) (image.Image, error) {
-	exists, cacheImg, err := d.cache.LoadImage(wp, d.params.width, d.params.height)
-	if err != nil {
-		return nil, fmt.Errorf("load cache failed: %w", err)
+	exists, cacheImg, errL := d.cache.LoadImage(wp, d.params.width, d.params.height)
+	if errL != nil {
+		return nil, fmt.Errorf("load cache failed: %w", errL)
 	}
 
 	if exists {
@@ -47,9 +59,9 @@ func (d *Drawer) Filled(wp *api.Wallpaper, f wpFetcher, c cacheHandler, h postHa
 		return cacheImg, nil
 	}
 
-	origin, thumb, err := f(wp)
-	if err != nil {
-		return nil, fmt.Errorf("download image failed: %w", err)
+	origin, thumb, errG := f(wp)
+	if errG != nil {
+		return nil, fmt.Errorf("download image failed: %w", errG)
 	}
 
 	if h != nil {
@@ -58,12 +70,11 @@ func (d *Drawer) Filled(wp *api.Wallpaper, f wpFetcher, c cacheHandler, h postHa
 		}
 	}
 
-	img, _, err := image.Decode(bytes.NewBuffer(origin))
-	if err != nil {
-		return nil, fmt.Errorf("image decode failed: %w", err)
+	filled, errF := lo.Ternary(origin.IsFile(), d.byIMagick, d.byLocal)(origin)
+	if errF != nil {
+		return nil, errF
 	}
 
-	filled := imaging.Fill(img, d.params.width, d.params.height, imaging.Center, imaging.Lanczos)
 	if !thumb {
 		if err := d.cache.SaveImage(wp, filled); err != nil {
 			return filled, fmt.Errorf("save cache failed: %w", err)
@@ -72,6 +83,59 @@ func (d *Drawer) Filled(wp *api.Wallpaper, f wpFetcher, c cacheHandler, h postHa
 
 	d.history.Add(wp, filled, thumb, origin)
 	return filled, nil
+}
+
+func (d *Drawer) byLocal(vf *VFile) (image.Image, error) {
+	bs, err := vf.Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	img, _, err := image.Decode(bytes.NewBuffer(bs))
+	if err != nil {
+		return nil, fmt.Errorf("image decode failed: %w", err)
+	}
+
+	return imaging.Fill(img, d.params.width, d.params.height, imaging.Center, imaging.Lanczos), nil
+}
+
+func (d *Drawer) byIMagick(vf *VFile) (image.Image, error) {
+	tmp := d.tmpfs.NewFile()
+	if tmp == "" {
+		return nil, errors.New("no tmpfs supported")
+	}
+	tmp += ".png"
+
+	wh := fmt.Sprintf("%dx%d", d.params.width, d.params.height)
+	src := vf.Filepath()
+
+	cmd := exec.Command(
+		"convert",
+		src,
+		"-filter", "lanczos",
+		"-resize", fmt.Sprintf("%s^", wh),
+		"-gravity", "Center",
+		"-extent", wh,
+		tmp,
+	)
+	if bs, err := cmd.CombinedOutput(); err != nil {
+		d.log.With(zap.String("exec", cmd.String()), zap.Error(err)).Info("failed")
+		fmt.Println(string(bs))
+		return nil, err
+	}
+
+	d.log.With(zap.String("by", "imagick"), zap.String("src", src), zap.String("dst", tmp)).Debug("converted")
+
+	f, err := os.Open(tmp)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+	}()
+
+	return png.Decode(f)
 }
 
 func (d *Drawer) Canvas(img image.Image) error {

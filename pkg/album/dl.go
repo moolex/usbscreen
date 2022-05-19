@@ -2,10 +2,10 @@ package album
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"net/url"
+	"os/exec"
 	"path"
 
 	"github.com/go-resty/resty/v2"
@@ -16,8 +16,9 @@ import (
 	"go.uber.org/zap"
 )
 
-func NewDownloader(dir string, logger *zap.Logger) (*Downloader, error) {
+func NewDownloader(dir string, tmp *TmpFs, logger *zap.Logger) (*Downloader, error) {
 	d := &Downloader{
+		tmp: tmp,
 		cli: resty.New().SetDoNotParseResponse(true),
 		log: logger,
 	}
@@ -37,6 +38,7 @@ func NewDownloader(dir string, logger *zap.Logger) (*Downloader, error) {
 
 type Downloader struct {
 	fs  afero.Fs
+	tmp *TmpFs
 	cli *resty.Client
 	log *zap.Logger
 }
@@ -54,14 +56,19 @@ func (d *Downloader) Exists(wp *api.Wallpaper) (bool, error) {
 	return afero.Exists(d.fs, d.filename(wp))
 }
 
-func (d *Downloader) Get(wp *api.Wallpaper, thumb bool) ([]byte, error) {
+func (d *Downloader) Get(wp *api.Wallpaper, thumb bool) (*VFile, error) {
 	if d.fs != nil {
 		file := d.filename(wp)
 		if exists, err := afero.Exists(d.fs, file); err != nil {
 			return nil, err
 		} else if exists {
-			return afero.ReadFile(d.fs, file)
+			return newFile(file, d.fs), nil
 		}
+	}
+
+	tmp := d.tmp.NewFile()
+	if !thumb && tmp != "" {
+		return d.curlGet(wp.Path, tmp)
 	}
 
 	resp, err := d.cli.R().Get(lo.Ternary(thumb, wp.Thumbs.Original, wp.Path))
@@ -80,17 +87,28 @@ func (d *Downloader) Get(wp *api.Wallpaper, thumb bool) ([]byte, error) {
 		return nil, err
 	}
 
-	return buf.Bytes(), nil
+	return newBytes(buf.Bytes()), nil
 }
 
-func (d *Downloader) Save(wp *api.Wallpaper, bs []byte) error {
+func (d *Downloader) curlGet(url string, save string) (*VFile, error) {
+	cmd := exec.Command("curl", "-s", url, "-o", save)
+	if bs, err := cmd.CombinedOutput(); err != nil {
+		d.log.With(zap.String("exec", cmd.String()), zap.Error(err)).Info("failed")
+		fmt.Println(string(bs))
+		return nil, err
+	}
+	d.log.With(zap.String("by", "curl"), zap.String("file", save)).Debug("downloaded")
+	return newFile(save, nil), nil
+}
+
+func (d *Downloader) Save(wp *api.Wallpaper, vf *VFile) error {
 	dir := d.folder(wp)
 	file := d.filename(wp)
 
 	if exists, err := afero.Exists(d.fs, file); err != nil {
 		return err
 	} else if exists {
-		return errors.New("already saved")
+		return nil
 	}
 
 	if exists, err := afero.DirExists(d.fs, dir); err != nil {
@@ -101,11 +119,17 @@ func (d *Downloader) Save(wp *api.Wallpaper, bs []byte) error {
 		}
 	}
 
+	bs, err := vf.Bytes()
+	if err != nil {
+		return err
+	}
+
 	if len(bs) == 0 {
-		var err error
-		bs, err = d.Get(wp, false)
-		if err != nil {
-			return fmt.Errorf("re-download failed: %w", err)
+		var errR error
+		if vf, errR = d.Get(wp, false); errR != nil {
+			return fmt.Errorf("re-download failed: %w", errR)
+		} else if bs, errR = vf.Bytes(); errR != nil {
+			return errR
 		}
 	}
 

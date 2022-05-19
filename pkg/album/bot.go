@@ -19,7 +19,7 @@ func NewBot(token string, dev proto.Control, params *Params, dl *Downloader, d *
 	pref := tele.Settings{
 		Token: token,
 		Poller: &tele.LongPoller{
-			Timeout: 10 * time.Second,
+			Timeout: 30 * time.Second,
 		},
 	}
 
@@ -193,22 +193,23 @@ func (b *Bot) handleQuery() {
 func (b *Bot) handleAction() {
 	b.b.Handle("/info", func(context tele.Context) error {
 		log := b.h.Curr()
-		if log != nil {
-			wp := log.wp
-			lines := []string{
-				fmt.Sprintf("Category: %s", wp.Category),
-				fmt.Sprintf("Purity: %s", wp.Purity),
-				fmt.Sprintf("Views: %d", wp.Views),
-				fmt.Sprintf("Favorites: %d", wp.Favorites),
-				fmt.Sprintf("Resolution: %s", wp.Resolution),
-				fmt.Sprintf("File size: %s", bytesize.New(float64(wp.FileSize)).String()),
-				fmt.Sprintf("Created at: %s", wp.CreatedAt),
-				fmt.Sprintf("URL: %s", wp.Url),
-			}
-			return context.Reply(strings.Join(lines, "\n"))
-		} else {
+		if log == nil {
 			return context.Reply("Current no wallpaper")
 		}
+
+		wp := log.wp
+		lines := []string{
+			fmt.Sprintf("Category: %s", wp.Category),
+			fmt.Sprintf("Purity: %s", wp.Purity),
+			fmt.Sprintf("Views: %d", wp.Views),
+			fmt.Sprintf("Favorites: %d", wp.Favorites),
+			fmt.Sprintf("Resolution: %s", wp.Resolution),
+			fmt.Sprintf("File size: %s", bytesize.New(float64(wp.FileSize)).String()),
+			fmt.Sprintf("Created at: %s", wp.CreatedAt),
+			fmt.Sprintf("URL: %s", wp.Url),
+		}
+
+		return context.Reply(strings.Join(lines, "\n"))
 	})
 
 	b.b.Handle("/logs", func(context tele.Context) error {
@@ -216,6 +217,7 @@ func (b *Bot) handleAction() {
 		for _, log := range b.h.Logs() {
 			lines = append(lines, log.wp.Url)
 		}
+
 		return context.Reply(strings.Join(lines, "\n"))
 	})
 
@@ -224,11 +226,14 @@ func (b *Bot) handleAction() {
 		if log == nil {
 			return context.Reply("Previous no item")
 		}
+
 		if err := b.d.Canvas(log.filled); err != nil {
 			return context.Reply(fmt.Sprintf("draw canvas failed: %s", err))
 		}
+
 		b.params.Reset(b.params.ChangeWait)
 		b.h.Push(log)
+
 		return context.Reply("OK")
 	})
 
@@ -240,24 +245,31 @@ func (b *Bot) handleAction() {
 		if !log.thumb {
 			return context.Reply("Current is full size")
 		}
+
+		b.d.Lock()
+		defer b.d.Unlock()
+
 		filled, err := b.d.Filled(
 			log.wp,
-			func(wp *api.Wallpaper) ([]byte, bool, error) {
-				bs, err := b.dl.Get(wp, false)
-				return bs, false, err
+			func(wp *api.Wallpaper) (*VFile, bool, error) {
+				vf, err := b.dl.Get(wp, false)
+				return vf, false, err
 			},
 			nil,
-			func(wp *api.Wallpaper, thumb bool, origin []byte) error {
+			func(wp *api.Wallpaper, thumb bool, origin *VFile) error {
 				return b.dl.Save(wp, origin)
 			},
 		)
 		if err != nil {
 			return context.Reply(fmt.Sprintf("get thumb failed: %s", err))
 		}
+
 		if err := b.d.Canvas(filled); err != nil {
 			return context.Reply(fmt.Sprintf("draw canvas failed: %s", err))
 		}
+
 		b.params.Reset(b.params.ChangeWait)
+
 		return context.Reply("OK")
 	})
 
@@ -266,11 +278,12 @@ func (b *Bot) handleAction() {
 		if log == nil {
 			return context.Reply("Current no item")
 		}
+
 		if err := b.dl.Save(log.wp, lo.Ternary(log.thumb, nil, log.origin)); err != nil {
 			return context.Reply(fmt.Sprintf("save failed: %s", err))
-		} else {
-			return context.Reply(fmt.Sprintf("Saved of %s", log.wp.Url))
 		}
+
+		return context.Reply(fmt.Sprintf("Saved of %s", log.wp.Url))
 	})
 }
 

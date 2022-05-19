@@ -53,10 +53,10 @@ func (a *Album) pickImage() (*api.Wallpaper, image.Image, error) {
 
 	filled, err2 := a.d.Filled(
 		wp,
-		func(wp *api.Wallpaper) ([]byte, bool, error) {
+		func(wp *api.Wallpaper) (*VFile, bool, error) {
 			thumb := a.maxSize > 0 && wp.FileSize > a.maxSize
-			bs, err := a.dl.Get(wp, thumb)
-			return bs, thumb, err
+			vf, err := a.dl.Get(wp, thumb)
+			return vf, thumb, err
 		},
 		func(wp *api.Wallpaper, thumb image.Image) error {
 			if a.autoSave != nil && a.autoSave.Check(wp) {
@@ -67,7 +67,7 @@ func (a *Album) pickImage() (*api.Wallpaper, image.Image, error) {
 			}
 			return nil
 		},
-		func(wp *api.Wallpaper, thumb bool, origin []byte) error {
+		func(wp *api.Wallpaper, thumb bool, origin *VFile) error {
 			if !thumb && a.autoSave != nil && a.autoSave.Check(wp) {
 				if err := a.dl.Save(wp, origin); err != nil {
 					return fmt.Errorf("auto save failed: %w", err)
@@ -81,6 +81,11 @@ func (a *Album) pickImage() (*api.Wallpaper, image.Image, error) {
 }
 
 func (a *Album) Drawing() error {
+	if !a.d.TryLock() {
+		return errors.New("drawer busying")
+	}
+	defer a.d.Unlock()
+
 	_, filled, err := a.pickImage()
 
 	if filled != nil {
