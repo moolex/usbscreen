@@ -51,15 +51,19 @@ func (a *Album) pickImage() (*api.Wallpaper, image.Image, error) {
 		a.params.UpdateQuery(func(q *api.QueryCond) { q.Page = 0 })
 	}
 
+	autoSave := a.autoSave != nil && a.autoSave.Check(wp)
+	useThumb := !autoSave && (a.maxSize > 0 && wp.FileSize > a.maxSize)
+
 	filled, err2 := a.d.Filled(
 		wp,
+		// fetcher
 		func(wp *api.Wallpaper) (*VFile, bool, error) {
-			thumb := a.maxSize > 0 && wp.FileSize > a.maxSize
-			vf, err := a.dl.Get(wp, thumb)
-			return vf, thumb, err
+			vf, err := a.dl.Get(wp, useThumb)
+			return vf, useThumb, err
 		},
+		// pre cache
 		func(wp *api.Wallpaper, thumb image.Image) error {
-			if a.autoSave != nil && a.autoSave.Check(wp) {
+			if autoSave {
 				if exists, err := a.dl.Exists(wp); err == nil && !exists {
 					// force save file
 					_ = a.dl.Save(wp, nil)
@@ -67,8 +71,9 @@ func (a *Album) pickImage() (*api.Wallpaper, image.Image, error) {
 			}
 			return nil
 		},
+		// post fetch
 		func(wp *api.Wallpaper, thumb bool, origin *VFile) error {
-			if !thumb && a.autoSave != nil && a.autoSave.Check(wp) {
+			if !thumb && autoSave {
 				if err := a.dl.Save(wp, origin); err != nil {
 					return fmt.Errorf("auto save failed: %w", err)
 				}

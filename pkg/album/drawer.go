@@ -40,18 +40,18 @@ type Drawer struct {
 }
 
 type wpFetcher func(wp *api.Wallpaper) (origin *VFile, thumb bool, err error)
-type cacheHandler func(wp *api.Wallpaper, thumb image.Image) error
-type postHandler func(wp *api.Wallpaper, thumb bool, origin *VFile) error
+type preCache func(wp *api.Wallpaper, thumb image.Image) error
+type postFetch func(wp *api.Wallpaper, thumb bool, origin *VFile) error
 
-func (d *Drawer) Filled(wp *api.Wallpaper, f wpFetcher, c cacheHandler, h postHandler) (image.Image, error) {
+func (d *Drawer) Filled(wp *api.Wallpaper, fetcher wpFetcher, preCache preCache, postFetch postFetch) (image.Image, error) {
 	exists, cacheImg, errL := d.cache.LoadImage(wp, d.params.width, d.params.height)
 	if errL != nil {
 		return nil, fmt.Errorf("load cache failed: %w", errL)
 	}
 
 	if exists {
-		if c != nil {
-			if err := c(wp, cacheImg); err != nil {
+		if preCache != nil {
+			if err := preCache(wp, cacheImg); err != nil {
 				return nil, fmt.Errorf("cache handler failed: %w", err)
 			}
 		}
@@ -59,13 +59,13 @@ func (d *Drawer) Filled(wp *api.Wallpaper, f wpFetcher, c cacheHandler, h postHa
 		return cacheImg, nil
 	}
 
-	origin, thumb, errG := f(wp)
+	origin, thumb, errG := fetcher(wp)
 	if errG != nil {
 		return nil, fmt.Errorf("download image failed: %w", errG)
 	}
 
-	if h != nil {
-		if err := h(wp, thumb, origin); err != nil {
+	if postFetch != nil {
+		if err := postFetch(wp, thumb, origin); err != nil {
 			return nil, fmt.Errorf("post handler failed: %w", err)
 		}
 	}

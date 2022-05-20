@@ -119,21 +119,26 @@ func (d *Downloader) Save(wp *api.Wallpaper, vf *VFile) error {
 		}
 	}
 
-	bs, err := vf.Bytes()
+	var dat []byte
+	var err error
+
+	if vf != nil {
+		dat, err = vf.Bytes()
+	}
 	if err != nil {
 		return err
 	}
 
-	if len(bs) == 0 {
+	if len(dat) == 0 {
 		var errR error
 		if vf, errR = d.Get(wp, false); errR != nil {
 			return fmt.Errorf("re-download failed: %w", errR)
-		} else if bs, errR = vf.Bytes(); errR != nil {
+		} else if dat, errR = vf.Bytes(); errR != nil {
 			return errR
 		}
 	}
 
-	if err := afero.WriteFile(d.fs, file, bs, 0644); err != nil {
+	if err := afero.WriteFile(d.fs, file, dat, 0644); err != nil {
 		return err
 	}
 
