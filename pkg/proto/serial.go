@@ -2,17 +2,15 @@ package proto
 
 import (
 	"strings"
-	"time"
 
 	"github.com/pkg/errors"
 	"go.bug.st/serial"
 )
 
 type Options struct {
-	DTR         bool
-	RTS         bool
-	BaudRate    int
-	ReadTimeout time.Duration
+	DTR      bool
+	RTS      bool
+	BaudRate int
 }
 
 func NewSerial(name string) *Serial {
@@ -55,10 +53,6 @@ func (s *Serial) Open(opts *Options) error {
 	}
 
 	if err := port.SetRTS(opts.RTS); err != nil {
-		return err
-	}
-
-	if err := port.SetReadTimeout(opts.ReadTimeout); err != nil {
 		return err
 	}
 

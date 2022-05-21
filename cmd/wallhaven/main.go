@@ -17,6 +17,7 @@ import (
 	"usbscreen/pkg/device/inch35"
 	"usbscreen/pkg/device/remote"
 	"usbscreen/pkg/device/virtual"
+	"usbscreen/pkg/mixer"
 	"usbscreen/pkg/proto"
 )
 
@@ -138,8 +139,12 @@ func main() {
 		p.SetQuery(q)
 	}
 
+	mix := mixer.NewDrawer(dev, mixer.WithEffect(
+	//mixer.EffectBlock(),
+	))
+
 	history := album.NewHistory()
-	drawer := album.NewDrawer(dev, logger, p, tmp, cache, history)
+	drawer := album.NewDrawer(mix, p, tmp, cache, history, logger)
 
 	var bot *album.Bot
 	if *tgToken != "" {
@@ -216,7 +221,21 @@ func main() {
 
 	<-signals
 	logger.Info("shutting down")
+
+	wait := make(chan struct{})
+	go func() {
+		defer func() {
+			wait <- struct{}{}
+		}()
+		select {
+		case <-exited:
+			logger.Info("exited")
+			break
+		case <-time.After(5 * time.Second):
+			log.Fatal("exiting timeout")
+		}
+	}()
+
 	shutdown <- struct{}{}
-	<-exited
-	logger.Info("exited")
+	<-wait
 }

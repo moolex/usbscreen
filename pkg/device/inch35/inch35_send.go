@@ -50,24 +50,15 @@ func (i *Inch35) sendRaw(code uint8, var1 int, var2 int, var3 int, var4 int, byt
 }
 
 func (i *Inch35) sendBytes(bytes []byte) error {
-	var sent, recv int
-	var sentCost, recvCost time.Duration
+	var sent int
+	var cost time.Duration
 
-	sentStart := time.Now()
+	start := time.Now()
 	if n, err := i.serial.Write(bytes); err != nil {
 		return err
 	} else {
 		sent = n
-		sentCost = time.Since(sentStart)
-	}
-
-	recvStart := time.Now()
-	var rs []byte
-	if n, err := i.serial.Read(rs); err != nil {
-		return err
-	} else {
-		recv = n
-		recvCost = time.Since(recvStart)
+		cost = time.Since(start)
 	}
 
 	ext := ""
@@ -77,9 +68,7 @@ func (i *Inch35) sendBytes(bytes []byte) error {
 
 	i.logger.With(
 		zap.Int("sent", sent),
-		zap.String("sent_cost", sentCost.String()),
-		zap.Int("recv", recv),
-		zap.String("recv_cost", recvCost.String()),
+		zap.String("cost", cost.String()),
 		zap.String("data", ext),
 	).Debug("transfer")
 

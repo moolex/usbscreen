@@ -15,28 +15,28 @@ import (
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 
-	"usbscreen/pkg/proto"
+	"usbscreen/pkg/mixer"
 )
 
-func NewDrawer(dev proto.Control, log *zap.Logger, params *Params, tmp *TmpFs, cache *Cache, history *History) *Drawer {
+func NewDrawer(mixer *mixer.Drawer, params *Params, tmp *TmpFs, cache *Cache, history *History, logger *zap.Logger) *Drawer {
 	return &Drawer{
-		dev:     dev,
-		log:     log,
+		mixer:   mixer,
 		params:  params,
 		tmpfs:   tmp,
 		cache:   cache,
 		history: history,
+		logger:  logger,
 	}
 }
 
 type Drawer struct {
 	sync.Mutex
-	dev     proto.Control
-	log     *zap.Logger
+	mixer   *mixer.Drawer
 	params  *Params
 	tmpfs   *TmpFs
 	cache   *Cache
 	history *History
+	logger  *zap.Logger
 }
 
 type wpFetcher func(wp *api.Wallpaper) (origin *VFile, thumb bool, err error)
@@ -119,12 +119,12 @@ func (d *Drawer) byIMagick(vf *VFile) (image.Image, error) {
 		tmp,
 	)
 	if bs, err := cmd.CombinedOutput(); err != nil {
-		d.log.With(zap.String("exec", cmd.String()), zap.Error(err)).Info("failed")
+		d.logger.With(zap.String("exec", cmd.String()), zap.Error(err)).Info("failed")
 		fmt.Println(string(bs))
 		return nil, err
 	}
 
-	d.log.With(zap.String("by", "imagick"), zap.String("src", src), zap.String("dst", tmp)).Debug("converted")
+	d.logger.With(zap.String("by", "imagick"), zap.String("src", src), zap.String("dst", tmp)).Debug("converted")
 
 	f, err := os.Open(tmp)
 	if err != nil {
@@ -139,5 +139,5 @@ func (d *Drawer) byIMagick(vf *VFile) (image.Image, error) {
 }
 
 func (d *Drawer) Canvas(img image.Image) error {
-	return d.dev.DrawBitmap(0, 0, img)
+	return d.mixer.Canvas(img)
 }

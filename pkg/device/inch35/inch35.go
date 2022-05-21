@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"image"
-	"time"
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -32,11 +31,15 @@ func New(serial *proto.Serial, logger *zap.Logger) (proto.Control, error) {
 		width:  320,
 		height: 480,
 	}
+
+	if logger == nil {
+		dev.logger = zap.NewNop()
+	}
+
 	return dev, serial.Open(&proto.Options{
-		DTR:         true,
-		RTS:         true,
-		BaudRate:    115200,
-		ReadTimeout: time.Millisecond,
+		DTR:      true,
+		RTS:      true,
+		BaudRate: 115200,
 	})
 }
 
@@ -64,14 +67,12 @@ func (i *Inch35) SetLight(light uint8) error {
 }
 
 func (i *Inch35) SetRotate(landscape bool, invert bool) error {
-	ow := i.width
-	oh := i.height
+	ow, oh := i.width, i.height
 
 	ov := 100
 	if landscape {
 		ov++
-		i.width = oh
-		i.height = ow
+		i.width, i.height = oh, ow
 		if invert {
 			ov++
 		}
@@ -97,9 +98,8 @@ func (i *Inch35) SetMirror(mirror bool) error {
 }
 
 func (i *Inch35) DrawBitmap(posX uint16, posY uint16, image image.Image) error {
-	rect := image.Bounds().Size()
-	imgW := rect.X
-	imgH := rect.Y
+	rect := image.Bounds()
+	imgW, imgH := rect.Dx(), rect.Dy()
 
 	if imgW+int(posX) > i.width {
 		return errors.New("width overflow")

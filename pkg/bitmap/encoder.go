@@ -6,13 +6,13 @@ import (
 
 func Encode(src image.Image) []byte {
 	b := src.Bounds()
-	dst := NewRGB565(src.Bounds())
+	d := NewRGB565(b)
 
 	for x := b.Min.X; x < b.Max.X; x++ {
 		for y := b.Min.Y; y < b.Max.Y; y++ {
-			dst.Set(x, y, src.At(x, y))
+			d.Set(x, y, src.At(x, y))
 		}
 	}
 
-	return dst.pixels
+	return d.pixels
 }
