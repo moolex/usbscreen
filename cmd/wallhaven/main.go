@@ -36,6 +36,7 @@ var whSorting = flag.String("wh-sorting", "", "wallhaven sorting type")
 var whToplist = flag.String("wh-toplist", "1M", "wallhaven toplist range")
 var whRatio = flag.String("wh-ratio", "", "wallhaven ratio filter")
 var tgToken = flag.String("tg-token", "", "telegram bot token")
+var tgProxy = flag.String("tg-proxy", "", "http proxy for telegram")
 var cacheDir = flag.String("cache-dir", "", "caching thumb files")
 var saveDir = flag.String("save-dir", "", "wallpaper save dir")
 var tmpDir = flag.String("tmp-dir", "", "tmp dir for reduce memory usage")
@@ -149,7 +150,7 @@ func main() {
 	var bot *album.Bot
 	if *tgToken != "" {
 		var botErr error
-		bot, botErr = album.NewBot(*tgToken, dev, p, downloader, drawer, history)
+		bot, botErr = album.NewBot(*tgToken, *tgProxy, dev, p, downloader, drawer, history)
 		if botErr != nil {
 			log.Fatal(botErr)
 		}

@@ -2,6 +2,7 @@ package album
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -15,12 +16,26 @@ import (
 	"usbscreen/pkg/proto"
 )
 
-func NewBot(token string, dev proto.Control, params *Params, dl *Downloader, d *Drawer, h *History) (*Bot, error) {
+func NewBot(token string, proxy string, dev proto.Control, params *Params, dl *Downloader, d *Drawer, h *History) (*Bot, error) {
+	client := http.DefaultClient
+	if proxy != "" {
+		proxyUrl, err := url.Parse(proxy)
+		if err != nil {
+			return nil, err
+		}
+		client = &http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyURL(proxyUrl),
+			},
+		}
+	}
+
 	pref := tele.Settings{
 		Token: token,
 		Poller: &tele.LongPoller{
 			Timeout: 30 * time.Second,
 		},
+		Client: client,
 	}
 
 	b, err := tele.NewBot(pref)
